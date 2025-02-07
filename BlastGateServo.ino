@@ -8,6 +8,7 @@
  * - Automatische Sensorauswertung zur Servo-Steuerung (optional mit ACSensoren)
  * - Verhindert unnötige Servo-Bewegungen durch Doppeltrigger
  * - Servos werden nach Bewegung stromlos gemacht, um Energie zu sparen
+ * - Button-Steuerung: LEDs durchschalten mit Tastendruck, Gate nach Wartezeit öffnen
  *
  * Credits: Originalcode von Greg Pringle
  */
@@ -23,8 +24,13 @@ AcSensors sensorController;
 #endif
 
 unsigned long lastButtonPress = 0;
-const int debounceTime = 200; // Entprellzeit für den Button
+unsigned long selectionStartTime = 0;
+const int debounceTime = 300; // Entprellzeit für den Button erhöht
+const int selectionTimeout = 2000; // Zeit in ms nach letztem Tastendruck, bis Gate öffnet
+int selectedGate = 0;
 bool buttonPressed = false;
+bool selectionActive = false;
+bool buttonReleased = true;
 
 void setup() {
     Serial.begin(9600);
@@ -33,33 +39,43 @@ void setup() {
     #if HAS_ACSENSOR
     sensorController.initializeSensors();
     #endif
-    DEBUG_INFO("System gestartet\n");
+    Serial.print("System gestartet\n");
 }
 
 void loop() {
-    // Button-Eingabe verarbeiten
-    if (HAS_BUTTON && digitalRead(BUTTON_PIN) == LOW && !buttonPressed && millis() - lastButtonPress > debounceTime) {
-        buttonPressed = true;
+    // Button gedrückt: Nächstes Gate auswählen, aber nur wenn vorher losgelassen wurde
+    if (HAS_BUTTON && digitalRead(BUTTON_PIN) == LOW && millis() - lastButtonPress > debounceTime && buttonReleased) {
         lastButtonPress = millis();
-        int nextGate = (gateController.getCurrentOpenGate() + 1) % NUM_GATES;
-        gateController.manuallyOpenGate(nextGate);
-        DEBUG_INFO("Button gedrückt - nächstes Gate öffnen: ");
-        DEBUG_INFO(nextGate);
-        DEBUG_INFO("\n");
+        selectedGate = (selectedGate + 1) % (sizeof(LED_PINS) / sizeof(LED_PINS[0]));
+        gateController.highlightGateLED(selectedGate); // LEDs durchschalten
+        selectionStartTime = millis(); // Startzeit der Auswahl setzen
+        selectionActive = true;
+        buttonReleased = false;
+        Serial.print("LED Durchschalten - Ausgewähltes Gate: ");
+        Serial.println(selectedGate);
     }
-    if (digitalRead(BUTTON_PIN) == HIGH) {
-        buttonPressed = false;
+    
+    // Erkennen, wenn der Button wieder losgelassen wurde
+    if (HAS_BUTTON && digitalRead(BUTTON_PIN) == HIGH) {
+        buttonReleased = true;
+    }
+    
+    // Automatisches Öffnen nach Timeout, aber nur wenn eine Auswahl aktiv ist
+    if (selectionActive && millis() - selectionStartTime > selectionTimeout) {
+        gateController.manuallyOpenGate(selectedGate);
+        Serial.print("Timeout erreicht - Öffne Gate: ");
+        Serial.println(selectedGate);
+        selectionActive = false; // Auswahl zurücksetzen
     }
     
     #if HAS_ACSENSOR
     // Sensorauslesung und automatische Steuerung
     sensorController.readSensors();
-    for (int i = 0; i < NUM_AC_SENSORS; i++) {
+    for (int i = 0; i < (sizeof(AC_SENSOR_PINS) / sizeof(AC_SENSOR_PINS[0])); i++) {
         if (sensorController.isTriggered(i) && gateController.getCurrentOpenGate() != i) {
             gateController.openGate(i);
-            DEBUG_INFO("Sensor ausgelöst - Gate öffnen: ");
-            DEBUG_INFO(i);
-            DEBUG_INFO("\n");
+            Serial.print("Sensor ausgelöst - Gate öffnen: ");
+            Serial.println(i);
         }
     }
     #endif

@@ -33,23 +33,20 @@ constexpr int BUTTON_PIN = 2;      // Pin für den Button
 
 // === SENSOR EINSTELLUNGEN === //
 constexpr bool HAS_ACSENSOR = false; // Falls AC-Sensoren verwendet werden
-constexpr int NUM_AC_SENSORS = 0;  // Anzahl der AC-Sensoren
-constexpr int NUM_LEDS = 2;        // Anzahl der LEDs
-constexpr int NUM_GATES = 2;       // Anzahl der Blast-Gates mit Servos
 constexpr int NUM_OFF_SAMPLES = 50; // Anzahl der Samples für Sensor-Kalibrierung
 constexpr int NUM_OFF_MAX_SAMPLES = 500; // Maximale Sample-Zeit beim Start
 constexpr int AVG_READINGS = 25;   // Durchschnittliche Sensormessungen
 constexpr float AC_SENSOR_SENSITIVITY = 2.0; // Empfindlichkeit des AC-Sensors
 
 // === SERVO PIN DEFINITIONS === //
-constexpr int SERVO_PINS[2] = {9, 10};
-constexpr int SERVO_MAX[2] = {180, 180};
-constexpr int SERVO_MIN[2] = {0, 0};
+constexpr int SERVO_PINS[] = {9, 10, 11};
+constexpr int SERVO_MAX[] = {180, 180, 180};
+constexpr int SERVO_MIN[] = {0, 0, 0};
 
 // === AC SENSOR PINS === //
-constexpr int AC_SENSOR_PINS[2] = {A0, A1};
+constexpr int AC_SENSOR_PINS[] = {A0, A1,A2};
 
 // === LED PINS === //
-constexpr int LED_PINS[2] = {3, 4};
+constexpr int LED_PINS[] = {3, 4, 5};
 
 #endif // CONFIGURATION_H

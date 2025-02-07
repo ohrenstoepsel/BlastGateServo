@@ -19,8 +19,7 @@ struct ACSensor {
 
 class AcSensors {
   private:
-    ACSensor sensors[NUM_AC_SENSORS];
-    int lastReadingTime;
+    ACSensor sensors[sizeof(AC_SENSOR_PINS) / sizeof(AC_SENSOR_PINS[0])];
     
   public:
     AcSensors();

@@ -20,8 +20,8 @@ struct GateServo {
 
 class GateServos {
   private:
-    GateServo servos[NUM_GATES];
-    Servo servoObjects[NUM_GATES];
+    GateServo servos[sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0])];
+    Servo servoObjects[sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0])];
     int currentOpenGate = -1;
     
   public:
@@ -29,10 +29,11 @@ class GateServos {
     void initializeGates();
     void openGate(int gateNum);
     void closeGate(int gateNum);
-    void updateServos(); // Neue Funktion, die Servos mit millis() aktualisiert
+    void updateServos();
     void manuallyOpenGate(int gateNum);
-    int getCurrentOpenGate() { return currentOpenGate; } // Getter-Methode hinzugefügt
-    void disableServosIfIdle(); // Neue Methode, um Servos stromlos zu machen
+    int getCurrentOpenGate() { return currentOpenGate; }
+    void disableServosIfIdle();
+    void highlightGateLED(int gateNum);
 };
 
 #endif // GATESERVOS_H
