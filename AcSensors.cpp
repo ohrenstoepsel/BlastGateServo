@@ -1,213 +1,41 @@
-#include "Arduino.h"
-#include "Debug.h"
-#include "Configuration.h"
+/*
+ * AcSensors.cpp - Optimierte AC-Sensorsteuerung
+ */
+
 #include "AcSensors.h"
 
-  AcSensors::AcSensors()
-  { 
-  }
-   
-  //////////////////////////////////////////////////////////////////////
-  // InitializeSensors()
-  //
-  // Initialize sensors and read a baseline sensor reading with tools off
-  //
-  //////////////////////////////////////////////////////////////////////
-  void AcSensors::InitializeSensors()
-  {
-      for (int x = 0; x< num_ac_sensors; x++)
-      pinMode( ledpin[x], OUTPUT);
-      
-      DPRINTLN("Getting Sensor Readings");
-      //getAvgOffSensorReadings();
-  
-      getMaxOffSensorReadings();
-  }
-
-
-  //////////////////////////////////////////////////////////////////////
-  // AvgSensorReading(int forsensor)
-  //
-  // returns an average of the last X sensors readings for given sensor
-  //
-  //////////////////////////////////////////////////////////////////////
-  float AcSensors::AvgSensorReading(int forsensor)
-  {
-    int res = 0;
-    for (int x = 0; x < avg_readings; x++)
-    {
-      res = res + recentReadings[forsensor][x];
+AcSensors::AcSensors() {
+    for (int i = 0; i < NUM_AC_SENSORS; i++) {
+        sensors[i] = {AC_SENSOR_PINS[i], LED_PINS[i], 0.0, AC_SENSOR_SENSITIVITY, {}, 0};
     }
-    return (float)res / (float)avg_readings;
-  }
+    lastReadingTime = 0;
+}
 
-  //////////////////////////////////////////////////////////////////////
-  // getMaxOffSensorReadings()
-  //
-  // Poll for NUM_OFF_MAX_SAMPLES ms to determine maximum 'off' sensor
-  // reading for this sensor
-  //
-  //////////////////////////////////////////////////////////////////////
-  void AcSensors::getMaxOffSensorReadings()
-  {
-    for (int x = 0; x< num_ac_sensors; x++)
-    {
-        int maxsensorval = 0;
-        for (long y = 0; y < numoffmaxsamples; y++)
-        {      
-          int sensorval = analogRead(sensorPins[x]);
-          if (sensorval > maxsensorval) maxsensorval = sensorval;
-          delay(1);
-        }
-        offReadings[x] = maxsensorval;
-        DPRINT("OFF READING: ");
-        DPRINTLN(offReadings[x]);
+void AcSensors::initializeSensors() {
+    for (int i = 0; i < NUM_AC_SENSORS; i++) {
+        pinMode(sensors[i].ledPin, OUTPUT);
+        digitalWrite(sensors[i].ledPin, LOW);
     }
-  }
+}
 
-  //////////////////////////////////////////////////////////////////////
-  // ReadSensors()
-  //
-  // Read values for AC current sensors and add to list of values we will average
-  //
-  //////////////////////////////////////////////////////////////////////  
-  void AcSensors::ReadSensors()
-  {
-    curreadingindex ++;
-    if (curreadingindex >= avg_readings) curreadingindex =0;
+void AcSensors::readSensors() {
+    if (millis() - lastReadingTime < 50) return; // Nicht zu oft auslesen
+    lastReadingTime = millis();
     
-      // Convert the analog reading (which goes from 0 - 1023) to a voltage (0 - 5V):
-    for (int cursensor=0; cursensor < num_ac_sensors; cursensor++)
-    {
-       int sensorValue = analogRead(sensorPins[cursensor]);
-       //float voltage = sensorValue * (5.0 / 1023.0);
-       
-       //DPRINT("Reading Sensor ");  
-       //DPRINTLN(cursensor);
-       recentReadings[cursensor][curreadingindex] = sensorValue;
+    for (int i = 0; i < NUM_AC_SENSORS; i++) {
+        int sensorValue = analogRead(sensors[i].pin);
+        sensors[i].recentReadings[sensors[i].currentReadingIndex] = sensorValue;
+        sensors[i].currentReadingIndex = (sensors[i].currentReadingIndex + 1) % AVG_READINGS;
     }
-  
-  }
+}
 
+bool AcSensors::isTriggered(int sensorNum) {
+    if (sensorNum < 0 || sensorNum >= NUM_AC_SENSORS) return false;
     
-  //////////////////////////////////////////////////////////////////////
-  // DisplayMeter()
-  //
-  // Use LEDs to display a meter for positioning AC sensor clamps. 
-  // Turn on a device like a tool or a space heater on the cable the sensor is on.
-  // Rotate the sesnsor around the cable until the light for that 
-  // sensor is flashing as fast as possible (or has become solidly lit).
-  //
-  //////////////////////////////////////////////////////////////////////  
-  void AcSensors::DisplayMeter()
-  {
-      for (int cursensor= 0; cursensor < num_ac_sensors; cursensor++)
-      {
-        int avgthissensor =  AvgSensorReading(cursensor);
-        //float percent = avgthissensor / 4.5;
-        float percent = (float)(avgthissensor-offReadings[cursensor]) / (920 - offReadings[cursensor]);
-        blinktimers[cursensor] += 1; 
-        int blinklen = maxblinklen * (1-percent);
-  
-        // print out the value you read:
-        DPRINT(percent);
-        DPRINT("    " );
-        DPRINT(avgthissensor);
-        DPRINT(" BlinkLen:");
-        DPRINT(blinklen);
-        DPRINT(" BlinkTimer:");
-        DPRINT(blinktimers[cursensor]);
-        DPRINTLN("");
-        #ifdef DEBUG
-        //displayaverages(cursensor);
-        #endif
-              
-        if (blinktimers[cursensor] > blinklen)
-        {
-          blinktimers[cursensor] = 0;
-          if (blinkon[cursensor])
-          {
-           digitalWrite(ledpin[cursensor], LOW);
-           DPRINT("LED OFF " );
-           DPRINTLN(cursensor);
-           blinkon[cursensor]=false;
-          }
-          else
-          {
-           digitalWrite(ledpin[cursensor], HIGH);
-           DPRINT("LED ON" );
-           DPRINTLN(cursensor);
-           blinkon[cursensor] = true;
-          }
-        }
-      }
-  }
-  
-
-  //////////////////////////////////////////////////////////////////////
-  // getAvgOffSensorReadings()
-  //
-  // Determine average 'off' reading for each sensor.  
-  // Currently unused but might be useful if you have a tool that isn't 
-  // drawing enough power to trigger the sensor using max values.
-  //
-  //////////////////////////////////////////////////////////////////////
-  void AcSensors::getAvgOffSensorReadings()
-  {
-    for (int x = 0; x< num_ac_sensors; x++)
-    {
-        long totalsensorval = 0;
-        for (int y = 0; y < numoffsamples; y++)
-        {      
-          totalsensorval += analogRead(sensorPins[x]);
-          delay(100);
-        }
-        offReadings[x] = (float)totalsensorval/ (float)numoffsamples;
-        DPRINT("OFF READING: ");
-        DPRINTLN(offReadings[x]);
+    int total = 0;
+    for (int i = 0; i < AVG_READINGS; i++) {
+        total += sensors[sensorNum].recentReadings[i];
     }
-  }
-
-  //////////////////////////////////////////////////////////////////////
-  // Triggered(int forsensor)
-  //
-  // Returns true if the given AC current sensor number is triggered
-  //////////////////////////////////////////////////////////////////////  
-  bool AcSensors::Triggered(int forsensor)
-  {
-    return (AvgSensorReading(forsensor) > ((float)offReadings[forsensor]  * acsensorsentitivity));
-  }
-
-
-  //////////////////////////////////////////////////////////////////////
-  // displayaverages(int cursensor)
-  //
-  // Debugging function to display values polled for given sensor
-  //////////////////////////////////////////////////////////////////////
-  void AcSensors::displayaverages(int cursensor)
-  {
-      Serial.print( recentReadings[cursensor][0]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][1]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][2]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][3]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][4]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][5]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][6]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][7]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][8]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][9]);
-      Serial.print(" ");
-      Serial.print( recentReadings[cursensor][0]);
-      Serial.println(" ");
-  }
-  
-    
+    float avg = (float)total / AVG_READINGS;
+    return avg > (sensors[sensorNum].offReading * sensors[sensorNum].sensitivity);
+}

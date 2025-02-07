@@ -1,129 +1,100 @@
-#include "Arduino.h"
-#include <Servo.h>
-#include "Debug.h"
-#include "Configuration.h"
+/*
+ * GateServos.cpp - Optimierte Servo-Steuerung
+ */
+
 #include "GateServos.h"
 
-  // Constructor.. usually called with -1 to indicate no gates are open
-  //
-  GateServos::GateServos(int initcuropengate)
-  { 
-    curopengate = initcuropengate;
-  }
-
-  // Open the given gate number
-  //
-  void GateServos::opengate(int gatenum) 
-  {
-      DPRINT("OPENING GATE #"); 
-      DPRINT(gatenum);
-      DPRINT(" SERVO PIN:");
-      DPRINT(servopin[gatenum]);
-      DPRINT(" VALUE:");
-      DPRINT(minservo[gatenum]); 
-      DPRINT(" DELAY:");
-      DPRINT(opendelay);
-      DPRINTLN("");
-      curopengate = gatenum;
-      digitalWrite(ledpin[gatenum], HIGH);
-      myservo.attach(servopin[gatenum]);  // attaches the servo
-      myservo.write(minservo[gatenum]); //open gate
-      delay(opendelay); // wait for gate to close
-      myservo.detach();
-      DPRINTLN("OPENED GATE");
-      //if (servopin[gatenum] ==12) testServo(12);
-  }
-
-
-  // Close the given gate number
-  void GateServos::closegate(int gatenum)
-  {
-    DPRINT("CLOSING GATE #");
-    DPRINT(gatenum);
-    DPRINTLN("");
-    digitalWrite(ledpin[gatenum], LOW);
-    myservo.attach(servopin[gatenum]);  // attaches the servo
-    myservo.write(maxservo[gatenum]); //close gate
-    delay(closedelay); // wait for gate to close
-    myservo.detach();
-    DPRINTLN("CLOSED GATE");
-  }
-
-
-  // Debug function to test servo by opening and closing it given a pin number
-  void GateServos::testServo(int servopin)
-  {  
-    DPRINT("TESTING SERVO #");
-    DPRINTLN(servopin);
-    myservo.attach(servopin);  // attaches the servo
-    myservo.write(255); 
-    delay(2000);
-    DPRINTLN("Set to 255");
-    myservo.write(0);
-    delay(2000);
-    DPRINTLN("Set to 0");
-    myservo.detach();
-  }
-
-  // Initialize gates and close them all
-  //
-  void GateServos::initializeGates()
-  {
-    //testServo(12);  
-      // close all gates one by one
-    for (int thisgate = 0; thisgate < num_gates; thisgate++)
-    {
-     pinMode(ledpin[thisgate], OUTPUT);
-     digitalWrite(ledpin[thisgate], HIGH);
-     myservo.attach(servopin[thisgate]);  // attaches the servo
-     myservo.write(maxservo[thisgate]); //close gate
-     delay(closedelay); // wait for gate to close
-     myservo.detach();
-     digitalWrite(ledpin[thisgate], LOW);
+GateServos::GateServos() {
+    int servoArraySize = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
+    int gateCount = min(NUM_GATES, servoArraySize);
+    for (int i = 0; i < gateCount; i++) {
+        servos[i] = {SERVO_PINS[i], SERVO_MIN[i], SERVO_MAX[i], LED_PINS[i], false, 0};
     }
-  }
+    currentOpenGate = -1;
+}
 
-  // Turn LED on for given gate number
-  void GateServos::ledon(int gatenum)
-  {
-    digitalWrite(ledpin[gatenum], HIGH);
-  }
+void GateServos::initializeGates() {
+    int servoArraySize = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
+    int gateCount = min(NUM_GATES, servoArraySize);
+    for (int i = 0; i < gateCount; i++) {
+        pinMode(servos[i].ledPin, OUTPUT);
+        digitalWrite(servos[i].ledPin, LOW);
+        servoObjects[i].attach(servos[i].pin);
+        servoObjects[i].write(servos[i].maxPosition); // Starte in geschlossener Position
+        delay(500);
+        servoObjects[i].detach();
+        servos[i].isMoving = false;
+    }
+}
 
-  // Turn LED off for given gate number
-  void GateServos::ledoff(int gatenum)
-  {
-    digitalWrite(ledpin[gatenum], LOW);
-  }
+void GateServos::openGate(int gateNum) {
+    int servoArraySize = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
+    if (gateNum < 0 || gateNum >= min(NUM_GATES, servoArraySize)) return;
+    
+    if (currentOpenGate == gateNum) return; // Verhindert doppeltes Öffnen desselben Gates
+    
+    if (currentOpenGate != -1) {
+        closeGate(currentOpenGate);
+        delay(200); // Kleine Wartezeit, um Servo-Übergänge zu vermeiden
+    }
+    
+    DEBUG_INFO("Öffne Gate: ");
+    DEBUG_INFO(gateNum);
+    DEBUG_INFO("\n");
+    
+    servos[gateNum].isMoving = true;
+    servos[gateNum].moveStartTime = millis();
+    servoObjects[gateNum].attach(servos[gateNum].pin);
+    servoObjects[gateNum].write(servos[gateNum].minPosition);
+    digitalWrite(servos[gateNum].ledPin, HIGH);
+    currentOpenGate = gateNum;
+}
 
-  // User has pushed button to manually open given gate
-  void GateServos::ManuallyOpenGate(int curselectedgate)
-  {
-      if (curselectedgate == num_gates)
-      {
-        closegate(curopengate);
-        curopengate=-1;
-        curselectedgate=-1;
-      }
-      else
-      {
-        if (curopengate > -1) 
-        {
-          DPRINT("Button Closing Gate= ");  
-          DPRINTLN(curopengate);
-          closegate(curopengate);
-        }      
-        curopengate = curselectedgate;   
-        DPRINT("Button Opening Gate= ");  
-        DPRINTLN(curopengate);
-        opengate(curopengate);      
-      }
-  }
-  
-  // return index of first open gate or -1 for none
-  int GateServos::firstgateopen()
-  {
-    for (int curgate = 0; curgate < num_gates; curgate++)
-      if (gateopen[curgate]) return curgate;
-  
-    return -1;
-  }
+void GateServos::closeGate(int gateNum) {
+    int servoArraySize = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
+    if (gateNum < 0 || gateNum >= min(NUM_GATES, servoArraySize)) return;
+    
+    if (currentOpenGate != gateNum) return; // Verhindert doppeltes Schließen
+    
+    DEBUG_INFO("Schließe Gate: ");
+    DEBUG_INFO(gateNum);
+    DEBUG_INFO("\n");
+    
+    servos[gateNum].isMoving = true;
+    servos[gateNum].moveStartTime = millis();
+    servoObjects[gateNum].attach(servos[gateNum].pin);
+    servoObjects[gateNum].write(servos[gateNum].maxPosition);
+    digitalWrite(servos[gateNum].ledPin, LOW);
+    
+    // Verzögertes Freigeben des Servos, um Zittern zu verhindern
+    delay(300);
+    servoObjects[gateNum].detach();
+    servos[gateNum].isMoving = false;
+    currentOpenGate = -1; // Kein Gate mehr offen
+}
+
+void GateServos::updateServos() {
+    unsigned long currentMillis = millis();
+    int servoArraySize = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
+    int gateCount = min(NUM_GATES, servoArraySize);
+    for (int i = 0; i < gateCount; i++) {
+        if (servos[i].isMoving && (currentMillis - servos[i].moveStartTime > CLOSE_DELAY)) {
+            servos[i].isMoving = false;
+            // Keine sofortige Detach(), um Servos stabil zu halten
+        }
+    }
+}
+
+void GateServos::disableServosIfIdle() {
+    int servoArraySize = sizeof(SERVO_PINS) / sizeof(SERVO_PINS[0]);
+    int gateCount = min(NUM_GATES, servoArraySize);
+    for (int i = 0; i < gateCount; i++) {
+        if (!servos[i].isMoving) {
+            servoObjects[i].detach();
+        }
+    }
+}
+
+void GateServos::manuallyOpenGate(int gateNum) {
+    openGate(gateNum);
+}
