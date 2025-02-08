@@ -24,13 +24,16 @@ AcSensors sensorController;
 #endif
 
 unsigned long lastButtonPress = 0;
+unsigned long lastStableTime = 0;
 unsigned long selectionStartTime = 0;
 const int debounceTime = 300; // Entprellzeit für den Button erhöht
+const int stabilityThreshold = 50; // Zeit in ms für stabilen LOW-Zustand
 const int selectionTimeout = 2000; // Zeit in ms nach letztem Tastendruck, bis Gate öffnet
 int selectedGate = 0;
 bool buttonPressed = false;
 bool selectionActive = false;
 bool buttonReleased = true;
+bool lastButtonState = HIGH;
 
 void setup() {
     Serial.begin(9600);
@@ -43,31 +46,42 @@ void setup() {
 }
 
 void loop() {
-    // Button gedrückt: Nächstes Gate auswählen, aber nur wenn vorher losgelassen wurde
-    if (HAS_BUTTON && digitalRead(BUTTON_PIN) == LOW && millis() - lastButtonPress > debounceTime && buttonReleased) {
-        lastButtonPress = millis();
+    // Button-Zustand lesen und stabilen Zustand prüfen
+    bool currentButtonState = digitalRead(BUTTON_PIN);
+    unsigned long currentMillis = millis();
+
+    if (currentButtonState == LOW && lastButtonState == HIGH) {
+        // Übergang von HIGH zu LOW erkannt
+        lastStableTime = currentMillis;
+    }
+
+    if (currentButtonState == LOW && (currentMillis - lastStableTime > stabilityThreshold) && buttonReleased) {
+        // Button stabil LOW und nicht mehr released
+        lastButtonPress = currentMillis;
         selectedGate = (selectedGate + 1) % (sizeof(LED_PINS) / sizeof(LED_PINS[0]));
         gateController.highlightGateLED(selectedGate); // LEDs durchschalten
-        selectionStartTime = millis(); // Startzeit der Auswahl setzen
+        selectionStartTime = currentMillis; // Startzeit der Auswahl setzen
         selectionActive = true;
         buttonReleased = false;
         Serial.print("LED Durchschalten - Ausgewähltes Gate: ");
         Serial.println(selectedGate);
     }
-    
-    // Erkennen, wenn der Button wieder losgelassen wurde
-    if (HAS_BUTTON && digitalRead(BUTTON_PIN) == HIGH) {
+
+    if (currentButtonState == HIGH) {
+        // Button losgelassen
         buttonReleased = true;
     }
-    
+
+    lastButtonState = currentButtonState; // Aktualisiere den Zustand
+
     // Automatisches Öffnen nach Timeout, aber nur wenn eine Auswahl aktiv ist
-    if (selectionActive && millis() - selectionStartTime > selectionTimeout) {
+    if (selectionActive && currentMillis - selectionStartTime > selectionTimeout) {
         gateController.manuallyOpenGate(selectedGate);
         Serial.print("Timeout erreicht - Öffne Gate: ");
         Serial.println(selectedGate);
         selectionActive = false; // Auswahl zurücksetzen
     }
-    
+
     #if HAS_ACSENSOR
     // Sensorauslesung und automatische Steuerung
     sensorController.readSensors();
@@ -79,10 +93,10 @@ void loop() {
         }
     }
     #endif
-    
+
     // Servos aktualisieren, um nicht-blockierende Steuerung zu gewährleisten
     gateController.updateServos();
-    
+
     // Servos stromlos machen, wenn sie nicht in Bewegung sind
     gateController.disableServosIfIdle();
 }
